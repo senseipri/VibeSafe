@@ -1,0 +1,197 @@
+# ==========================================
+# VibeSafe Bulletproof .gitignore
+# ==========================================
+
+# --- Operating System Files ---
+# OS X / macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon\r
+._*
+.DocumentRevisions-V100
+.Spotlight-V100
+.Trashes
+VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+
+# --- Python ---
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
+
+# C extensions
+*.so
+
+# Distribution / packaging
+bin/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff (just in case)
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+.ipython/
+
+# pyenv
+.python-version
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+virtualenv/
+
+# Poetry
+.poetry/
+# Note: poetry.lock should be committed to git, so we do not ignore it.
+
+
+# --- IDEs and Editors ---
+# JetBrains / PyCharm / IntelliJ
+.idea/
+
+# VS Code (Visual Studio Code)
+.vscode/
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim / Emacs
+*.swp
+*.swo
+*~
+\#*\#
+.#*
+
+
+# --- Environments, Secrets, and Local Configs ---
+# Local environment variables
+.env
+.env.local
+.env.*
+!.env.example
+
+# Secrets, certificates, and keys
+*.pem
+*.key
+*.pub
+*.cert
+*.crt
+*.p12
+*.pfx
+secrets.yml
+credentials.yml
+secrets.json
+
+
+# --- Databases and Storage ---
+# SQLite / database files
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite3-journal
+*.db-journal
+
+# Redis dump
+dump.rdb
+
+
+# --- Docker ---
+# Log files
+.docker/
+
+
+# --- Miscellaneous / Cleanups ---
+# Log files
+*.log
+logs/
+log/
+
+# Temporary files
+*.tmp
+*.temp
