@@ -8,8 +8,8 @@ COPY pyproject.toml poetry.lock ./
 
 RUN pip install poetry
 RUN poetry config virtualenvs.create false
-RUN poetry install --no-interaction --no-root
+RUN poetry install --no-interaction
 
 COPY . .
 
-CMD ["uvicorn", "vibesafe.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "uvicorn vibesafe.api.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
