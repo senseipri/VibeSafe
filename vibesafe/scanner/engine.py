@@ -9,7 +9,14 @@ from vibesafe.api.config import get_settings
 from vibesafe.scanner.analysis import build_code_index
 from vibesafe.scanner.evidence import EvidenceBuilder
 from vibesafe.scanner.fixes import FixVerifier
-from vibesafe.scanner.findings import Finding, Proof, calculate_risk_score, get_verdict, sort_findings
+from vibesafe.scanner.findings import (
+    Finding,
+    Proof,
+    calculate_risk_score,
+    dedupe_findings,
+    get_verdict,
+    sort_findings,
+)
 from vibesafe.scanner.ingest import (
     IngestError,
     RepoManifest,
@@ -76,10 +83,17 @@ class VibeSafeEngine:
         code_index = build_code_index(manifest)
 
         logger.info(
-            "Starting scan | files=%d frameworks=%s repo_context=%s",
+            (
+                "Starting scan | files=%d frameworks=%s repo_context=%s "
+                "repo_size_bytes=%d ignored_baggage_bytes=%d scanned_source_bytes=%d scanned_file_count=%d"
+            ),
             len(manifest),
             frameworks,
             repo_context.kind,
+            manifest.stats.repo_size_bytes,
+            manifest.stats.ignored_size_bytes,
+            manifest.stats.scanned_source_bytes,
+            manifest.stats.scanned_file_count,
         )
 
         static_results = await asyncio.gather(
@@ -107,6 +121,7 @@ class VibeSafeEngine:
             findings, models_used = await self._llm_enrich(findings, manifest)
 
         findings = apply_repo_context(findings, repo_context)
+        findings = dedupe_findings(findings)
         visible_findings = [apply_final_scoring(finding) for finding in findings if finding.status != "rejected"]
         sorted_findings = sort_findings(visible_findings)
         risk_score = calculate_risk_score(sorted_findings)

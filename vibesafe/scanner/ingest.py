@@ -4,11 +4,11 @@ All operations are sandboxed to an isolated tmpdir that is cleaned up after the 
 """
 from __future__ import annotations
 
-import os
 import re
 import shutil
 import tempfile
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 
 import git
@@ -29,7 +29,7 @@ SKIP_DIRS: frozenset[str] = frozenset(
         "node_modules", ".git", "__pycache__", ".pytest_cache",
         "dist", "build", ".next", ".nuxt", "out", "coverage",
         ".venv", "venv", "env", ".env", "vendor",
-        ".mypy_cache", ".ruff_cache", "htmlcov",
+        ".mypy_cache", ".ruff_cache", "htmlcov", "generated",
     }
 )
 
@@ -38,27 +38,39 @@ SKIP_FILES: frozenset[str] = frozenset(
     {
         "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
         "poetry.lock", "Pipfile.lock", "Gemfile.lock",
-        ".DS_Store", "*.min.js", "*.min.css",
+        ".ds_store",
     }
 )
+
+MINIFIED_SUFFIXES: tuple[str, ...] = (".min.js", ".min.css")
 
 GITHUB_URL_PATTERN = re.compile(
     r"^https://github\.com/([a-zA-Z0-9_.-]+)/([a-zA-Z0-9_.-]+?)(?:\.git)?(?:/.*)?$"
 )
 
 MAX_FILE_SIZE_BYTES = 1 * 1024 * 1024  # 1MB per file
+MAX_SOURCE_SIZE_BYTES = 150 * 1024 * 1024  # 150MB source-only scan budget
 
 
 class IngestError(Exception):
     pass
 
 
+@dataclass
+class ManifestStats:
+    repo_size_bytes: int = 0
+    ignored_size_bytes: int = 0
+    scanned_source_bytes: int = 0
+    scanned_file_count: int = 0
+
+
 class RepoManifest:
     """Holds the list of source files from an ingested repo."""
 
-    def __init__(self, root: Path, files: list[Path]) -> None:
+    def __init__(self, root: Path, files: list[Path], stats: ManifestStats | None = None) -> None:
         self.root = root
         self.files = files
+        self.stats = stats or ManifestStats(scanned_file_count=len(files))
 
     def __len__(self) -> int:
         return len(self.files)
@@ -75,31 +87,62 @@ class RepoManifest:
             return str(file_path.relative_to(self.root))
         except ValueError:
             return str(file_path)
+
+
 def _should_skip(path: Path) -> bool:
     """Return True if this path should be excluded from scanning."""
-    for part in path.parent.parts:
-        if part in SKIP_DIRS:
-            return True
-    if path.name in SKIP_FILES:
+    lowered_parts = {part.lower() for part in path.parts}
+    if lowered_parts & SKIP_DIRS:
         return True
-    is_env_variant = path.name == ".env" or path.name.startswith(".env.")
+    if "types" in lowered_parts and "generated" in lowered_parts:
+        return True
+    name = path.name.lower()
+    if name in SKIP_FILES:
+        return True
+    if name.endswith(".d.ts"):
+        return True
+    if name.endswith(MINIFIED_SUFFIXES):
+        return True
+    is_env_variant = name == ".env" or name.startswith(".env.")
     if path.suffix.lower() not in SCAN_EXTENSIONS and not is_env_variant:
         return True
     return False
-def _enumerate_files(root: Path, max_files: int = 500) -> list[Path]:
-    """Walk a directory and return scannable source files."""
+
+
+def _enumerate_files(
+    root: Path,
+    max_files: int = 500,
+    max_source_size_bytes: int = MAX_SOURCE_SIZE_BYTES,
+) -> tuple[list[Path], ManifestStats]:
+    """Walk a directory and return scannable source files plus scan stats."""
     files: list[Path] = []
-    for entry in root.rglob("*"):
+    stats = ManifestStats()
+    for entry in sorted(root.rglob("*"), key=lambda path: path.as_posix().lower()):
         if not entry.is_file():
             continue
-        if _should_skip(entry.relative_to(root)):
+        try:
+            size = entry.stat().st_size
+        except OSError:
             continue
-        if entry.stat().st_size > MAX_FILE_SIZE_BYTES:
+        stats.repo_size_bytes += size
+
+        rel_path = entry.relative_to(root)
+        if _should_skip(rel_path):
+            stats.ignored_size_bytes += size
             continue
-        files.append(entry)
+        if size > MAX_FILE_SIZE_BYTES:
+            stats.ignored_size_bytes += size
+            continue
         if len(files) >= max_files:
-            break
-    return files
+            stats.ignored_size_bytes += size
+            continue
+        if stats.scanned_source_bytes + size > max_source_size_bytes:
+            raise IngestError("Repository source code exceeds scanning limit.")
+        files.append(entry)
+        stats.scanned_source_bytes += size
+
+    stats.scanned_file_count = len(files)
+    return files, stats
 
 
 def clone_github_repo(
@@ -112,6 +155,7 @@ def clone_github_repo(
     Returns (tmpdir, repo_root) — caller MUST clean up tmpdir.
     Raises IngestError on failure.
     """
+    _ = max_size_mb  # Backward-compatible signature; source-only budgeting happens in build_manifest.
     match = GITHUB_URL_PATTERN.match(url.strip())
     if not match:
         raise IngestError(
@@ -143,15 +187,6 @@ def clone_github_repo(
             raise IngestError(f"Repository not found or private: {owner}/{repo}") from e
         raise IngestError(f"Failed to clone repository: {msg}") from e
 
-    # Check repo size
-    total_size = sum(f.stat().st_size for f in repo_path.rglob("*") if f.is_file())
-    if total_size > max_size_mb * 1024 * 1024:
-        shutil.rmtree(tmpdir, ignore_errors=True)
-        raise IngestError(
-            f"Repository too large: {total_size / 1024 / 1024:.1f}MB "
-            f"(limit: {max_size_mb}MB)"
-        )
-
     return tmpdir, repo_path
 
 
@@ -161,6 +196,7 @@ def extract_zip(zip_path: Path, max_size_mb: int = 150) -> tuple[Path, Path]:
     Returns (tmpdir, extracted_root).
     Raises IngestError on failure.
     """
+    _ = max_size_mb  # Backward-compatible signature; source-only budgeting happens in build_manifest.
     tmpdir = Path(tempfile.mkdtemp(prefix="vibesafe_zip_"))
     try:
         with zipfile.ZipFile(zip_path, "r") as zf:
@@ -169,14 +205,6 @@ def extract_zip(zip_path: Path, max_size_mb: int = 150) -> tuple[Path, Path]:
                 member_path = Path(member)
                 if member_path.is_absolute() or ".." in member_path.parts:
                     raise IngestError(f"Malicious zip entry detected: {member!r}")
-
-            # Check total uncompressed size
-            total = sum(info.file_size for info in zf.infolist())
-            if total > max_size_mb * 1024 * 1024:
-                raise IngestError(
-                    f"Zip contents too large: {total / 1024 / 1024:.1f}MB "
-                    f"(limit: {max_size_mb}MB)"
-                )
 
             zf.extractall(str(tmpdir))
     except zipfile.BadZipFile as e:
@@ -198,8 +226,8 @@ def extract_zip(zip_path: Path, max_size_mb: int = 150) -> tuple[Path, Path]:
 
 def build_manifest(repo_root: Path, max_files: int = 500) -> RepoManifest:
     """Build a RepoManifest from a repo root directory."""
-    files = _enumerate_files(repo_root, max_files)
-    return RepoManifest(root=repo_root, files=files)
+    files, stats = _enumerate_files(repo_root, max_files)
+    return RepoManifest(root=repo_root, files=files, stats=stats)
 
 
 def cleanup(tmpdir: Path) -> None:

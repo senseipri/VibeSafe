@@ -25,7 +25,7 @@ settings = get_settings()
 GITHUB_URL_RE = re.compile(
     r"^https://github\.com/[a-zA-Z0-9_.\-]+/[a-zA-Z0-9_.\-]+/?$"
 )
-MAX_ZIP_BYTES = settings.max_repo_size_mb * 1024 * 1024
+MAX_UPLOAD_ZIP_BYTES = 250 * 1024 * 1024
 
 
 def _llm_enabled() -> bool:
@@ -126,21 +126,33 @@ async def scan_upload(
     await file.seek(0)
 
     # Stream to a temp file (avoids loading whole zip into memory)
-    tmp = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
-    tmp_path = Path(tmp.name)
     total = 0
+    too_large = False
+    tmp_path: Path | None = None
     try:
-        while chunk := await file.read(64 * 1024):
-            total += len(chunk)
-            if total > MAX_ZIP_BYTES:
-                tmp_path.unlink(missing_ok=True)
-                raise HTTPException(
-                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                    detail=f"ZIP file exceeds maximum size of {settings.max_repo_size_mb}MB.",
-                )
-            tmp.write(chunk)
+        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+            while chunk := await file.read(64 * 1024):
+                total += len(chunk)
+                if total > MAX_UPLOAD_ZIP_BYTES:
+                    too_large = True
+                    break
+                tmp.write(chunk)
     finally:
-        tmp.close()
+        await file.close()
+
+    if tmp_path is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not create temporary upload file.",
+        )
+
+    if too_large:
+        _safe_unlink(tmp_path)
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="ZIP file exceeds maximum size of 250MB.",
+        )
 
     scan_id = str(uuid.uuid4())
     scan = Scan(id=uuid.UUID(scan_id), repo_url=None, status="queued")
@@ -287,7 +299,7 @@ async def _run_zip_scan_task(scan_id: str, zip_path: Path) -> None:
             logger.exception("Unexpected error during zip scan %s: %s", scan_id, exc)
             await _mark_failed(scan_id, db, "An unexpected error occurred.")
         finally:
-            zip_path.unlink(missing_ok=True)
+            _safe_unlink(zip_path)
 
 
 # ── Helpers ──────────────────────────────────────────────────────
@@ -364,3 +376,10 @@ async def _get_scan_by_id(scan_id: str, db: AsyncSession) -> Scan:
     if scan is None:
         raise RuntimeError(f"Scan {scan_id} not found in database.")
     return scan
+
+
+def _safe_unlink(tmp_path: Path) -> None:
+    try:
+        tmp_path.unlink(missing_ok=True)
+    except PermissionError:
+        logger.warning("Could not delete temporary upload file", exc_info=True)

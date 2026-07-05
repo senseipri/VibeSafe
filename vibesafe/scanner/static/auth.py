@@ -34,12 +34,19 @@ AUTH_SIGNALS_JS = [
     "middleware", "authorization",
 ]
 
-# Regex to find Python route decorators
+PY_ROUTER_AUTH_RE = re.compile(
+    r"(?:APIRouter\s*\([^)]*dependencies\s*=|include_router\s*\([^)]*dependencies\s*=|add_middleware\s*\([^)]*(?:Auth|Security)|@app\.middleware)",
+    re.IGNORECASE,
+)
+JS_ROUTER_AUTH_RE = re.compile(
+    r"(?:router|app)\.use\([^)]*(?:auth|passport|jwt|clerk|session|protect|requireAuth)|withAuth|next-auth/middleware|clerkMiddleware",
+    re.IGNORECASE,
+)
+
 PY_ROUTE_RE = re.compile(
     r'@(?:\w+\.)?(?:route|get|post|put|delete|patch|head|options)\s*\(\s*["\']([^"\']+)["\']'
 )
 
-# Regex to find JS/TS route definitions
 JS_ROUTE_RE = re.compile(
     r'(?:router|app|server)\s*\.\s*(?:get|post|put|delete|patch)\s*\(\s*["\']([^"\']+)["\']'
 )
@@ -59,6 +66,14 @@ def _has_js_auth(source: str) -> bool:
     return any(sig in source for sig in AUTH_SIGNALS_JS)
 
 
+def _has_python_router_auth(source: str) -> bool:
+    return bool(PY_ROUTER_AUTH_RE.search(source) or _has_py_auth(source))
+
+
+def _has_js_router_auth(source: str) -> bool:
+    return bool(JS_ROUTER_AUTH_RE.search(source) or _has_js_auth(source))
+
+
 class AuthScanner(BaseScanner):
     """
     Detects routes/endpoints that are missing authentication middleware.
@@ -67,127 +82,122 @@ class AuthScanner(BaseScanner):
 
     async def scan(self, manifest: RepoManifest) -> list[Finding]:
         findings: list[Finding] = []
+        project_auth_middleware = self._project_has_auth_middleware(manifest)
 
         for file_path in manifest.files:
             suffix = file_path.suffix.lower()
+            rel = manifest.relative(file_path)
+            if self._should_skip_path(rel):
+                continue
             if suffix == ".py":
-                findings.extend(self._scan_python(file_path, manifest.relative(file_path)))
+                findings.extend(self._scan_python(file_path, rel, project_auth_middleware))
             elif suffix in (".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs"):
-                findings.extend(self._scan_js(file_path, manifest.relative(file_path)))
+                findings.extend(self._scan_js(file_path, rel, project_auth_middleware))
 
         return findings
 
-    def _scan_python(self, file_path: Path, rel: str) -> list[Finding]:
+    def _scan_python(self, file_path: Path, rel: str, project_auth_middleware: bool) -> list[Finding]:
         findings: list[Finding] = []
         source = self._read(file_path)
-        if not source:
+        if not source or not PY_ROUTE_RE.search(source):
             return findings
 
-        # Quick check: does this file have any route definitions?
-        if not PY_ROUTE_RE.search(source):
-            return findings
+        router_has_auth = _has_python_router_auth(source)
 
-        # Check if there are ANY auth signals in the whole file
-        file_has_auth = _has_py_auth(source)
-
-        # Try AST-based analysis for better accuracy
         try:
             tree = ast.parse(source)
             findings.extend(
-                self._ast_check_python(tree, source, rel, file_has_auth)
+                self._ast_check_python(tree, rel, router_has_auth, project_auth_middleware)
             )
         except SyntaxError:
-            # Fallback to regex if AST parse fails (e.g. for files with syntax errors)
             findings.extend(
-                self._regex_check_python(source, rel, file_has_auth)
+                self._regex_check_python(source, rel, router_has_auth, project_auth_middleware)
             )
 
         return findings
 
     def _ast_check_python(
-        self, tree: ast.AST, source: str, rel: str, file_has_auth: bool
+        self,
+        tree: ast.AST,
+        rel: str,
+        router_has_auth: bool,
+        project_auth_middleware: bool,
     ) -> list[Finding]:
         findings: list[Finding] = []
-        lines = source.splitlines()
 
         for node in ast.walk(tree):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
 
-            # Look for route decorators on this function
             route_path = None
             http_method = None
             func_has_auth = False
 
             for decorator in node.decorator_list:
                 dec_src = ast.unparse(decorator) if hasattr(ast, "unparse") else ""
-
-                # Check if this is a route decorator
                 if any(
-                    m in dec_src.lower()
-                    for m in [".route(", ".get(", ".post(", ".put(", ".delete(", ".patch("]
+                    marker in dec_src.lower()
+                    for marker in [".route(", ".get(", ".post(", ".put(", ".delete(", ".patch("]
                 ):
-                    # Extract path from decorator
                     if isinstance(decorator, ast.Call):
                         for arg in decorator.args:
                             if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
                                 route_path = arg.value
-                        # Detect method
                         if isinstance(decorator.func, ast.Attribute):
                             http_method = decorator.func.attr.upper()
-
-                # Check for auth signals in decorators
                 if any(sig.lower() in dec_src.lower() for sig in AUTH_SIGNALS_PY):
                     func_has_auth = True
 
             if route_path is None:
                 continue
 
-            # Check function args for auth dependencies
             func_src = ast.unparse(node) if hasattr(ast, "unparse") else ""
+            route_context = "\n".join(
+                [func_src] + [ast.unparse(dec) for dec in node.decorator_list if hasattr(ast, "unparse")]
+            )
             if any(sig in func_src for sig in AUTH_SIGNALS_PY):
                 func_has_auth = True
 
-            if func_has_auth or file_has_auth:
+            if func_has_auth or _has_py_auth(route_context) or router_has_auth:
                 continue
 
             if not _is_high_risk_path(route_path):
-                # Only flag medium for non-high-risk POST/PUT/DELETE.
-                # These lack a strong path signal, so use needs_review to
-                # avoid noise on repos with global middleware.
                 if http_method not in ("POST", "PUT", "DELETE", "PATCH"):
                     continue
                 severity = "medium"
-                finding_status: str = "needs_review"
+                finding_status = "needs_review"
             else:
                 severity = "critical"
-                # High-risk path with no auth anywhere in file — high confidence.
-                finding_status = "candidate"
+                finding_status = "needs_review" if project_auth_middleware else "candidate"
 
-            findings.append(
-                self._make_finding(
-                    category="missing_auth",
-                    severity=severity,
-                    file_path=rel,
-                    line_number=node.lineno,
-                    evidence=f"@{http_method or 'route'}('{route_path}') — no auth",
-                    description=(
-                        f"Route '{route_path}' ({http_method or 'unknown method'}) has no "
-                        "authentication middleware. Any unauthenticated user can access this "
-                        "endpoint and read or modify protected data."
-                    ),
-                    false_positive_risk="medium",
-                )
+            finding = self._make_finding(
+                category="missing_auth",
+                severity=severity,
+                file_path=rel,
+                line_number=node.lineno,
+                evidence=f"@{http_method or 'route'}('{route_path}') - no auth",
+                description=(
+                    f"Route '{route_path}' ({http_method or 'unknown method'}) has no "
+                    "authentication middleware. Any unauthenticated user can access this "
+                    "endpoint and read or modify protected data."
+                ),
+                false_positive_risk="high" if project_auth_middleware else "medium",
             )
-            # Override default status set by _make_finding.
-            if findings:
-                findings[-1].status = finding_status  # type: ignore[assignment]
+            finding.status = finding_status
+            if project_auth_middleware:
+                finding.proof.notes.append("Project-level auth middleware exists; route auth remains uncertain.")
+            findings.append(finding)
 
         return findings
 
-    def _regex_check_python(self, source: str, rel: str, file_has_auth: bool) -> list[Finding]:
-        """Fallback regex-based check when AST fails."""
-        if file_has_auth:
+    def _regex_check_python(
+        self,
+        source: str,
+        rel: str,
+        router_has_auth: bool,
+        project_auth_middleware: bool,
+    ) -> list[Finding]:
+        if router_has_auth:
             return []
 
         findings: list[Finding] = []
@@ -199,61 +209,62 @@ class AuthScanner(BaseScanner):
                 continue
             route_path = m.group(1)
 
-            if _is_high_risk_path(route_path):
-                # Check surrounding lines (±5) for auth signals
-                start = max(0, lineno - 5)
-                end = min(len(lines), lineno + 5)
-                context = "\n".join(lines[start:end])
-                if not _has_py_auth(context):
-                    f = self._make_finding(
-                        category="missing_auth",
-                        severity="critical",
-                        file_path=rel,
-                        line_number=lineno,
-                        evidence=line.strip()[:200],
-                        description=(
-                            f"Route '{route_path}' appears to have no authentication. "
-                            "Unprotected admin/user routes allow anyone to access sensitive data."
-                        ),
-                        false_positive_risk="medium",
-                    )
-                    # Regex fallback is less precise — cap at needs_review.
-                    f.status = "needs_review"
-                    findings.append(f)
+            if not _is_high_risk_path(route_path):
+                continue
+
+            start = max(0, lineno - 5)
+            end = min(len(lines), lineno + 5)
+            context = "\n".join(lines[start:end])
+            if _has_py_auth(context):
+                continue
+
+            f = self._make_finding(
+                category="missing_auth",
+                severity="critical",
+                file_path=rel,
+                line_number=lineno,
+                evidence=line.strip()[:200],
+                description=(
+                    f"Route '{route_path}' appears to have no authentication. "
+                    "Unprotected admin/user routes allow anyone to access sensitive data."
+                ),
+                false_positive_risk="high" if project_auth_middleware else "medium",
+            )
+            f.status = "needs_review"
+            if project_auth_middleware:
+                f.proof.notes.append("Project-level auth middleware exists; route auth remains uncertain.")
+            findings.append(f)
 
         return findings
 
-    def _scan_js(self, file_path: Path, rel: str) -> list[Finding]:
+    def _scan_js(self, file_path: Path, rel: str, project_auth_middleware: bool) -> list[Finding]:
         findings: list[Finding] = []
         source = self._read(file_path)
         if not source:
             return findings
 
-        if not JS_ROUTE_RE.search(source):
-            if not self._is_next_route_handler(rel, source):
-                return findings
+        if not JS_ROUTE_RE.search(source) and not self._is_next_route_handler(rel, source):
+            return findings
 
-        file_has_auth = _has_js_auth(source)
+        router_has_auth = _has_js_router_auth(source)
         lines = source.splitlines()
 
         if self._is_next_route_handler(rel, source):
-            findings.extend(self._scan_next_route(rel, lines, file_has_auth))
+            findings.extend(self._scan_next_route(rel, lines, router_has_auth, project_auth_middleware))
 
         for lineno, line in enumerate(lines, start=1):
             m = JS_ROUTE_RE.search(line)
             if not m:
                 continue
             route_path = m.group(1)
-
             if not _is_high_risk_path(route_path):
                 continue
 
-            # Check surrounding context for auth middleware
             start = max(0, lineno - 3)
             end = min(len(lines), lineno + 15)
             context = "\n".join(lines[start:end])
 
-            if _has_js_auth(context) or file_has_auth:
+            if _has_js_auth(context) or router_has_auth:
                 continue
 
             f = self._make_finding(
@@ -266,16 +277,22 @@ class AuthScanner(BaseScanner):
                     f"Route '{route_path}' has no authentication middleware. "
                     "Any unauthenticated request can access this endpoint."
                 ),
-                false_positive_risk="medium",
+                false_positive_risk="high" if project_auth_middleware else "medium",
             )
-            # JS context scanning is heuristic — cap at needs_review to
-            # prevent noise on repos that apply auth at the router level.
             f.status = "needs_review"
+            if project_auth_middleware:
+                f.proof.notes.append("Project-level auth middleware exists; route auth remains uncertain.")
             findings.append(f)
 
         return findings
 
-    def _scan_next_route(self, rel: str, lines: list[str], file_has_auth: bool) -> list[Finding]:
+    def _scan_next_route(
+        self,
+        rel: str,
+        lines: list[str],
+        router_has_auth: bool,
+        project_auth_middleware: bool,
+    ) -> list[Finding]:
         findings: list[Finding] = []
         route_path = self._next_route_path(rel)
         if not route_path or not _is_high_risk_path(route_path):
@@ -288,7 +305,7 @@ class AuthScanner(BaseScanner):
             method = method_match.group(1).upper()
             end = min(len(lines), lineno + 25)
             context = "\n".join(lines[lineno - 1 : end])
-            if _has_js_auth(context) or file_has_auth:
+            if _has_js_auth(context) or router_has_auth:
                 continue
             finding = self._make_finding(
                 category="missing_auth",
@@ -300,11 +317,28 @@ class AuthScanner(BaseScanner):
                     f"Next.js route '{route_path}' ({method}) has no authentication or authorization checks. "
                     "Any unauthenticated request can access sensitive functionality."
                 ),
-                false_positive_risk="medium",
+                false_positive_risk="high" if project_auth_middleware else "medium",
             )
             finding.status = "needs_review"
+            if project_auth_middleware:
+                finding.proof.notes.append("Project-level auth middleware exists; route auth remains uncertain.")
             findings.append(finding)
         return findings
+
+    def _project_has_auth_middleware(self, manifest: RepoManifest) -> bool:
+        for file_path in manifest.files:
+            rel = manifest.relative(file_path)
+            if self._should_skip_path(rel):
+                continue
+            rel_lower = rel.replace("\\", "/").lower()
+            if not any(token in rel_lower for token in ("middleware", "auth", "router", "main", "app")):
+                continue
+            source = self._read(file_path)
+            if not source:
+                continue
+            if _has_python_router_auth(source) or _has_js_router_auth(source):
+                return True
+        return False
 
     def _is_next_route_handler(self, rel: str, source: str) -> bool:
         rel_lower = rel.replace("\\", "/").lower()

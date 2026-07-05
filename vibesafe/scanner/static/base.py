@@ -8,6 +8,7 @@ from vibesafe.scanner.findings import Finding
 from vibesafe.scanner.ingest import RepoManifest
 
 logger = logging.getLogger(__name__)
+GENERATED_PATH_PARTS = {"generated", "vendor", "vendors"}
 
 
 class BaseScanner(ABC):
@@ -55,3 +56,13 @@ class BaseScanner(ABC):
     def _is_comment(self, line: str) -> bool:
         stripped = line.strip()
         return stripped.startswith("#") or stripped.startswith("//") or stripped.startswith("*")
+
+    def _should_skip_path(self, rel_path: str, *, allow_generated: bool = False) -> bool:
+        """Defensive skip for generated or vendored files even if they reach the manifest."""
+        if allow_generated:
+            return False
+        rel_lower = rel_path.replace("\\", "/").lower()
+        if rel_lower.endswith(".d.ts"):
+            return True
+        parts = [part for part in rel_lower.split("/") if part]
+        return any(part in GENERATED_PATH_PARTS for part in parts)

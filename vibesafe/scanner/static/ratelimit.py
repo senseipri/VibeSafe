@@ -40,6 +40,14 @@ JS_RATE_LIMIT_SIGNALS = [
     "throttle", "throttler", "rate_limit", "limiter(",
     "slowDown", "apiRateLimit", "requestLimit",
 ]
+PY_ROUTER_RATE_LIMIT_RE = re.compile(
+    r"(?:@limiter\.limit|add_middleware\s*\([^)]*(?:RateLimit|Limiter)|APIRouter\s*\([^)]*dependencies\s*=.*(?:limiter|throttle)|include_router\s*\([^)]*dependencies\s*=.*(?:limiter|throttle)|@app\.middleware)",
+    re.IGNORECASE,
+)
+JS_ROUTER_RATE_LIMIT_RE = re.compile(
+    r"(?:router|app)\.use\([^)]*(?:rateLimit|rateLimiter|slowDown|throttle|limiter)|express-rate-limit|throttler",
+    re.IGNORECASE,
+)
 
 # Python route patterns
 PY_ROUTE_RE = re.compile(
@@ -125,6 +133,14 @@ def _is_auth_bruteforce_target(path: str) -> bool:
 
     return False
 
+
+def _has_python_router_rate_limit(source: str) -> bool:
+    return bool(PY_ROUTER_RATE_LIMIT_RE.search(source) or any(sig in source for sig in PY_RATE_LIMIT_SIGNALS))
+
+
+def _has_js_router_rate_limit(source: str) -> bool:
+    return bool(JS_ROUTER_RATE_LIMIT_RE.search(source) or any(sig in source for sig in JS_RATE_LIMIT_SIGNALS))
+
 class RateLimitScanner(BaseScanner):
     """
     Detects auth and payment endpoints that have no rate limiting configured.
@@ -134,26 +150,28 @@ class RateLimitScanner(BaseScanner):
 
     async def scan(self, manifest: RepoManifest) -> list[Finding]:
         findings: list[Finding] = []
+        project_rate_limit = self._project_has_rate_limit(manifest)
 
         for file_path in manifest.files:
             suffix = file_path.suffix.lower()
             rel = manifest.relative(file_path)
+            if self._should_skip_path(rel):
+                continue
             content = self._read(file_path)
             if not content:
                 continue
 
             if suffix == ".py":
-                findings.extend(self._scan_python(content, rel))
+                findings.extend(self._scan_python(content, rel, project_rate_limit))
             elif suffix in (".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs"):
-                findings.extend(self._scan_js(content, rel))
+                findings.extend(self._scan_js(content, rel, project_rate_limit))
 
         return findings
 
-    def _scan_python(self, content: str, rel: str) -> list[Finding]:
+    def _scan_python(self, content: str, rel: str, project_rate_limit: bool) -> list[Finding]:
         findings: list[Finding] = []
 
-        # Check if the file has any rate limiting at all
-        file_has_rl = any(sig in content for sig in PY_RATE_LIMIT_SIGNALS)
+        router_has_rl = _has_python_router_rate_limit(content)
 
         lines = content.splitlines()
         for lineno, line in enumerate(lines, start=1):
@@ -173,7 +191,7 @@ class RateLimitScanner(BaseScanner):
             context = "\n".join(lines[start:lineno])
             local_has_rl = any(sig in context for sig in PY_RATE_LIMIT_SIGNALS)
 
-            if file_has_rl or local_has_rl:
+            if router_has_rl or local_has_rl:
                 continue
 
             f = self._make_finding(
@@ -189,16 +207,18 @@ class RateLimitScanner(BaseScanner):
             # exist elsewhere). Downgrade to needs_review so it does not
             # dominate reports before LLM confirmation.
             f.status = "needs_review"
+            if project_rate_limit:
+                f.proof.notes.append("Project-level rate limit middleware exists; endpoint coverage remains uncertain.")
             findings.append(f)
 
         return findings
 
-    def _scan_js(self, content: str, rel: str) -> list[Finding]:
+    def _scan_js(self, content: str, rel: str, project_rate_limit: bool) -> list[Finding]:
         findings: list[Finding] = []
 
-        file_has_rl = any(sig in content for sig in JS_RATE_LIMIT_SIGNALS)
+        router_has_rl = _has_js_router_rate_limit(content)
         if self._is_next_route_handler(rel, content):
-            findings.extend(self._scan_next_route(content, rel, file_has_rl))
+            findings.extend(self._scan_next_route(content, rel, router_has_rl, project_rate_limit))
 
         lines = content.splitlines()
         for lineno, line in enumerate(lines, start=1):
@@ -219,7 +239,7 @@ class RateLimitScanner(BaseScanner):
             context = "\n".join(lines[lineno - 1 : end])
             local_has_rl = any(sig in context for sig in JS_RATE_LIMIT_SIGNALS)
 
-            if file_has_rl or local_has_rl:
+            if router_has_rl or local_has_rl:
                 continue
 
             f = self._make_finding(
@@ -232,22 +252,27 @@ class RateLimitScanner(BaseScanner):
                 false_positive_risk="medium",
             )
             f.status = "needs_review"
+            if project_rate_limit:
+                f.proof.notes.append("Project-level rate limit middleware exists; endpoint coverage remains uncertain.")
             findings.append(f)
 
         return findings
 
-    def _scan_next_route(self, content: str, rel: str, file_has_rl: bool) -> list[Finding]:
+    def _scan_next_route(
+        self,
+        content: str,
+        rel: str,
+        router_has_rl: bool,
+        project_rate_limit: bool,
+    ) -> list[Finding]:
         findings: list[Finding] = []
         route_path = self._next_route_path(rel)
         sensitive, category = _is_sensitive(route_path)
-        if not sensitive or file_has_rl:
+        if not sensitive or router_has_rl:
             return findings
         
         if category == "auth" and not _is_auth_bruteforce_target(route_path):
             return findings
-        if file_has_rl:
-            return findings
-
         lines = content.splitlines()
         for lineno, line in enumerate(lines, start=1):
             method_match = NEXT_ROUTE_HANDLER_RE.search(line)
@@ -266,8 +291,25 @@ class RateLimitScanner(BaseScanner):
                 false_positive_risk="medium",
             )
             finding.status = "needs_review"
+            if project_rate_limit:
+                finding.proof.notes.append("Project-level rate limit middleware exists; endpoint coverage remains uncertain.")
             findings.append(finding)
         return findings
+
+    def _project_has_rate_limit(self, manifest: RepoManifest) -> bool:
+        for file_path in manifest.files:
+            rel = manifest.relative(file_path)
+            if self._should_skip_path(rel):
+                continue
+            rel_lower = rel.replace("\\", "/").lower()
+            if not any(token in rel_lower for token in ("middleware", "limit", "rate", "app", "main", "router")):
+                continue
+            content = self._read(file_path)
+            if not content:
+                continue
+            if _has_python_router_rate_limit(content) or _has_js_router_rate_limit(content):
+                return True
+        return False
 
     def _is_next_route_handler(self, rel: str, content: str) -> bool:
         rel_lower = rel.replace("\\", "/").lower()

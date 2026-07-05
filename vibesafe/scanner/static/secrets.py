@@ -9,6 +9,7 @@ from vibesafe.scanner.ingest import RepoManifest
 from vibesafe.scanner.static.base import BaseScanner
 
 logger = logging.getLogger(__name__)
+ENV_ASSIGNMENT_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+?)\s*$")
 PLACEHOLDER_RE = re.compile(
     r"(?:changeme|example|dummy|sample|placeholder|your[_ -]?key|test[_ -]?key|fake|mock|null)",
     re.IGNORECASE,
@@ -18,6 +19,16 @@ PROMPTISH_RE = re.compile(
     r"\b(?:system_prompt|user_prompt|assistant_message|prompt_template|instruction|template)\b",
     re.IGNORECASE,
 )
+SENSITIVE_ENV_KEY_RE = re.compile(
+    r"(?:api[_-]?key|secret|token|password|passwd|private[_-]?key|jwt|client[_-]?secret|access[_-]?key|credentials?)",
+    re.IGNORECASE,
+)
+NON_SECRET_ENV_KEY_RE = re.compile(
+    r"^(?:api_host|api_port|host|port|debug|debug_mode|feature(?:_[a-z0-9_]+)?|enable(?:_[a-z0-9_]+)?|disable(?:_[a-z0-9_]+)?|flag(?:_[a-z0-9_]+)?|node_env|app_env|environment|log_level|base_url|public_url|origin|url|uri)$",
+    re.IGNORECASE,
+)
+LOCAL_VALUE_RE = re.compile(r"(?:localhost|127\.0\.0\.1)", re.IGNORECASE)
+PRIVATE_KEY_RE = re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----")
 
 # (pattern, severity, human_name)
 VIBE_PATTERNS: list[tuple[str, str, str]] = [
@@ -97,31 +108,37 @@ class SecretsScanner(BaseScanner):
 
         for file_path in manifest.files:
             rel = manifest.relative(file_path)
+            if self._should_skip_path(rel):
+                continue
 
             # Flag committed environment files but skip examples/templates
             if file_path.name in {".env", ".env.local", ".env.production", ".env.development"} and not any(
                 s in file_path.name for s in ["example", "test", "sample", "template"]
             ):
-                first_line = ""
+                first_secret_line = ""
                 try:
-                    first_line = file_path.read_text(encoding="utf-8", errors="replace").splitlines()[0][:200]
+                    for line in file_path.read_text(encoding="utf-8", errors="replace").splitlines():
+                        if self._env_line_contains_secret(line):
+                            first_secret_line = line.strip()[:200]
+                            break
                 except Exception:
-                    first_line = ".env file committed"
-                findings.append(
-                    self._make_finding(
-                        category="committed_env_file",
-                        severity="critical",
-                        file_path=rel,
-                        line_number=1,
-                        evidence=first_line,
-                        description=(
-                            "A .env file containing secrets has been committed to the repository. "
-                            "Anyone with repo access can steal all credentials. "
-                            "Add .env to .gitignore immediately and rotate all secrets."
-                        ),
-                        false_positive_risk="low",
+                    first_secret_line = ""
+                if first_secret_line:
+                    findings.append(
+                        self._make_finding(
+                            category="committed_env_file",
+                            severity="critical",
+                            file_path=rel,
+                            line_number=1,
+                            evidence=first_secret_line,
+                            description=(
+                                "A .env file containing secrets has been committed to the repository. "
+                                "Anyone with repo access can steal all credentials. "
+                                "Add .env to .gitignore immediately and rotate all secrets."
+                            ),
+                            false_positive_risk="low",
+                        )
                     )
-                )
 
             content = self._read(file_path)
             if not content:
@@ -159,3 +176,39 @@ class SecretsScanner(BaseScanner):
                         break  # one finding per line is enough
 
         return findings
+
+    def _env_line_contains_secret(self, line: str) -> bool:
+        stripped = line.strip()
+        if not stripped or self._is_comment(stripped):
+            return False
+        if PRIVATE_KEY_RE.search(stripped):
+            return True
+        if any(pattern.search(stripped) for pattern, _, _ in _COMPILED):
+            return True
+
+        match = ENV_ASSIGNMENT_RE.match(stripped)
+        if not match:
+            return False
+
+        key, raw_value = match.groups()
+        normalized_key = key.strip().lower()
+        value = raw_value.strip().strip("\"'")
+        if not value or PLACEHOLDER_RE.search(value):
+            return False
+        if NON_SECRET_ENV_KEY_RE.match(normalized_key):
+            return False
+        if LOCAL_VALUE_RE.search(value):
+            return False
+        if value.lower() in {"true", "false", "1", "0", "development", "dev", "test", "staging", "local"}:
+            return False
+        if not SENSITIVE_ENV_KEY_RE.search(normalized_key):
+            return False
+        if normalized_key.endswith("token") or normalized_key.endswith("secret") or "private_key" in normalized_key:
+            return len(value) >= 8
+        if "password" in normalized_key or "passwd" in normalized_key:
+            return len(value) >= 6
+        if "api_key" in normalized_key or "access_key" in normalized_key or "client_secret" in normalized_key:
+            return len(value) >= 12
+        if "jwt" in normalized_key or "credentials" in normalized_key:
+            return len(value) >= 8
+        return len(value) >= 8

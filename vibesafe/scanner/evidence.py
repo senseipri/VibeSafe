@@ -145,7 +145,9 @@ class EvidenceBuilder:
                     finding.proof.notes.append("Rejected: required source/sink/path proof is incomplete.")
                     finding.confidence = min(finding.confidence, 0.45)
             elif finding.category in ROUTE_PROOF_CATEGORIES:
-                if proof.source_present and proof.path_present:
+                if finding.status == "needs_review":
+                    finding.confidence = min(finding.confidence, 0.69)
+                elif proof.source_present and proof.path_present:
                     finding.status = "candidate"
                 else:
                     finding.status = "needs_review"
@@ -156,8 +158,14 @@ class EvidenceBuilder:
                     if not proof.path_present:
                         finding.proof.notes.append(
                             "Sensitive action/data path is not clear enough for candidate status."
-                        )
+                    )
                     finding.confidence = min(finding.confidence, 0.69)
+            elif finding.category in AI_SECURITY_CATEGORIES:
+                finding.status = "needs_review"
+                finding.confidence = min(finding.confidence, 0.55)
+                finding.proof.notes.append(
+                    "AI security finding held at needs_review until exploitability is proven."
+                )
             else:
                 if finding.category in DIRECT_PROOF_CATEGORIES:
                     finding.status = "candidate"

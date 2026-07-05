@@ -55,6 +55,8 @@ class AISecurityScanner(BaseScanner):
         for file_path in manifest.files:
             suffix = file_path.suffix.lower()
             rel = manifest.relative(file_path)
+            if self._should_skip_path(rel):
+                continue
             if suffix not in {".py", ".js", ".ts", ".jsx", ".tsx", ".mjs", ".json", ".yaml", ".yml"}:
                 continue
             content = self._read(file_path)
