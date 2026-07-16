@@ -16,7 +16,7 @@ const TIERS = [
     label: 'Analysis',
     sub: 'Vibe-Code Semantic Scanning',
     icon: Scan,
-    desc: 'Claude, GPT-4o, and Gemini run in parallel on suspect code paths. Consensus = real finding. Disagreement = flag for review.',
+    desc: 'Qwen, Kimi K2, and LLM run in parallel on suspect code paths. Consensus = real finding. Disagreement = flag for review.',
     color: '#B967FF',
   },
   {

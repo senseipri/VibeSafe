@@ -7,12 +7,7 @@ const ROWS = [
   { feature: 'Multi-LLM confirmation', vibesafe: true, sast: false, none: false },
   { feature: 'Slopsquatting detection', vibesafe: true, sast: false, none: false },
   { feature: 'AI-generated fix code', vibesafe: true, sast: false, none: false },
-  {
-    feature: 'Price for solo founders',
-    vibesafe: '$49/mo',
-    sast: '$300+/mo',
-    none: '$0 now, breach later',
-  },
+
   { feature: 'Setup time', vibesafe: '45 seconds', sast: 'Days', none: '0' },
   { feature: 'False positive rate', vibesafe: '~5%', sast: '~40%', none: 'n/a' },
 ];

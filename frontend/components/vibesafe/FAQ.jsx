@@ -14,19 +14,15 @@ const FAQS = [
   },
   {
     q: 'Why use three LLMs instead of one?',
-    a: 'Model disagreement is information. When Claude, GPT-4o, and Gemini all agree a finding is real — it\u2019s real. When they disagree — that\u2019s ambiguity worth flagging. Single-model scanners give false confidence on contested findings.',
+    a: 'Model disagreement is information. When  all three models agree a finding is real — it\u2019s real. When they disagree — that\u2019s ambiguity worth flagging. Single-model scanners give false confidence on contested findings.',
   },
   {
     q: 'What languages and frameworks does it support?',
-    a: 'Python (FastAPI, Django, Flask), JavaScript/TypeScript (Next.js, Express, Node), Go, and any project using Supabase, Firebase, or PostgreSQL. More frameworks added monthly.',
-  },
-  {
-    q: 'Can it be used on private repos?',
-    a: 'Yes. Use your GITHUB_TOKEN (which already has private repo access in GitHub Actions) or provide a personal access token with repo scope. We never store the token.',
+    a: 'Python (FastAPI, Flask), JavaScript/TypeScript (Next.js, Express, Node), plus package and config scanning for npm/pip projects. It also detects patterns in PostgreSQL, Supabase, and AI/agent-style apps. More frameworks are added regularly.',
   },
   {
     q: 'What if it flags something that isn\u2019t a real vulnerability?',
-    a: 'Every finding includes Claude\u2019s confidence level. Low-confidence findings are labelled separately. You can dismiss findings with a reason — this feedback improves the model over time.',
+    a: 'Every finding includes Qwen\u2019s confidence level. Low-confidence findings are labelled separately. You can dismiss findings with a reason — this feedback improves the model over time.',
   },
 ];
 

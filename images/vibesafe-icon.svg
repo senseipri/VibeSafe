@@ -1,0 +1,48 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="38%" r="75%">
+      <stop offset="0%" stop-color="#160A24"/>
+      <stop offset="60%" stop-color="#0A0611"/>
+      <stop offset="100%" stop-color="#05040A"/>
+    </radialGradient>
+    <linearGradient id="strokeGrad" x1="150" y1="210" x2="380" y2="150" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#7A1FD4"/>
+      <stop offset="55%" stop-color="#9B3CF0"/>
+      <stop offset="100%" stop-color="#C589FF"/>
+    </linearGradient>
+    <radialGradient id="nodeGrad" cx="40%" cy="35%" r="65%">
+      <stop offset="0%" stop-color="#F3E8FF"/>
+      <stop offset="45%" stop-color="#C589FF"/>
+      <stop offset="100%" stop-color="#8A2BE2"/>
+    </radialGradient>
+    <filter id="glow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="14" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="softGlow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+  </defs>
+
+  <rect x="0" y="0" width="512" height="512" rx="118" ry="118" fill="url(#bg)"/>
+
+  <!-- echo trail (precomputed 0.88 scale from joint, offset down-right) -->
+  <path d="M 236 350 L 169 239 M 236 350 L 372 186"
+        stroke="#4A1B7A" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"
+        fill="none" opacity="0.32"/>
+
+  <!-- primary mark -->
+  <path d="M 226 336 L 150 210 M 226 336 L 380 150"
+        stroke="url(#strokeGrad)" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"
+        fill="none" filter="url(#softGlow)" opacity="0.5"/>
+  <path d="M 226 336 L 150 210 M 226 336 L 380 150"
+        stroke="url(#strokeGrad)" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"
+        fill="none"/>
+
+  <!-- nodes -->
+  <circle cx="150" cy="210" r="17" fill="url(#nodeGrad)"/>
+  <circle cx="380" cy="150" r="27" fill="url(#nodeGrad)" filter="url(#glow)"/>
+</svg>

@@ -16,6 +16,14 @@ export default function FindingItem({ finding, index, modelsUsed = [], forceOpen
     setTimeout(() => setCopied(false), 1600);
   };
 
+  const translateModelName = (name) => {
+    const m = name.toLowerCase();
+    if (m.includes('claude')) return 'qwen';
+    if (m.includes('gpt4o') || m.includes('openai') || m.includes('gpt')) return 'kimi k2';
+    if (m.includes('gemini')) return 'llm';
+    return name;
+  };
+
   // Determine LLMs involved dynamically
   const allModels = Array.from(new Set([
     ...modelsUsed,
@@ -23,7 +31,7 @@ export default function FindingItem({ finding, index, modelsUsed = [], forceOpen
     ...(finding.validator ? [finding.validator] : [])
   ])).filter(Boolean);
 
-  const displayModels = allModels.length > 0 ? allModels : ['claude', 'gpt4o', 'gemini'];
+  const displayModels = (allModels.length > 0 ? allModels : ['claude', 'gpt4o', 'gemini']).map(translateModelName);
   const confirmingCount = (finding.confirmed_by || []).length;
   const totalModelsCount = displayModels.length;
 
@@ -223,7 +231,7 @@ export default function FindingItem({ finding, index, modelsUsed = [], forceOpen
                   LLM CONSENSUS:
                 </span>
                 {displayModels.map((model) => {
-                  const isConfirmed = (finding.confirmed_by || []).includes(model);
+                  const isConfirmed = (finding.confirmed_by || []).map(translateModelName).includes(model);
                   return (
                     <span
                       key={model}

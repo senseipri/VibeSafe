@@ -106,7 +106,7 @@ export default function TheMoat() {
           </h2>
           <p className="mt-10 max-w-2xl mx-auto text-[15px] text-[#A0A0A0] font-light leading-relaxed">
             10,000+ empirical scans of real vibe-coded applications.
-            A proprietary pattern database of every way Claude, GPT-4o,
+            A proprietary pattern database of every way Qwen, Kimi K2,
             Cursor, Bolt, Lovable, and v0 leave you exposed.
             <span className="block mt-3 text-white">
               This isn&rsquo;t a wrapper. It&rsquo;s an inventory of harm.

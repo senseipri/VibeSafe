@@ -10,9 +10,9 @@ const PHASES = [
   { text: 'Indexed files · building manifest', ms: 350 },
   { text: 'Running static analysis (regex + AST)...', ms: 600 },
   { text: '✓ Static pass complete', ms: 200, ok: true },
-  { text: 'Groq/Claude reviewing architectural risks...', ms: 700 },
-  { text: 'GPT-4o generating fix code...', ms: 700 },
-  { text: 'Gemini auditing packages against npm/PyPI...', ms: 800 },
+  { text: 'Qwen reviewing architectural risks...', ms: 700 },
+  { text: 'Kimi K2 generating solution fix...', ms: 700 },
+  { text: 'LLM auditing packages against npm/PyPI...', ms: 800 },
   { text: '✓ Multi-LLM consensus reached', ms: 250, ok: true },
   { text: 'Scoring with CVSS weights...', ms: 350 },
 ];

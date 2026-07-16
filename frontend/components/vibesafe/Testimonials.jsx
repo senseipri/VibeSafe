@@ -17,7 +17,7 @@ const T = [
     avatar: '#3B9EFF',
     initials: 'DP',
     quote:
-      'The Gemini package audit caught a hallucinated npm package name that could have been a supply chain attack. I didn\u2019t even know that was a thing.',
+      'The LLM package audit caught a hallucinated npm package name that could have been a supply chain attack. I didn’t even know that was a thing.',
   },
   {
     name: 'Sofia Reyes',

@@ -16,7 +16,7 @@ const MILESTONES = [
     id: 'h1-2026',
     when: 'H1 2026',
     title: 'Multi-Agent Orchestration',
-    body: 'Claude, GPT-4o, Gemini in parallel consensus. Disagreement-as-information layer goes live.',
+    body: 'Qwen, Kimi K2, LLM in parallel consensus. Disagreement-as-information layer goes live.',
     x: 50,
     y: 30,
     color: '#B967FF',

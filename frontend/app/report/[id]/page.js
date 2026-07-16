@@ -332,7 +332,7 @@ export default function ReportPage({ params }) {
             className="mt-12 p-5 rounded-xl border border-[#1F1F3D] bg-[#05050D] text-center print:hidden"
           >
             <p className="text-[13px] text-[#A0A0A0] font-light">
-              Scanned by VibeSafe · Claude · GPT-4o · Gemini in consensus ·{' '}
+              Scanned by VibeSafe · Qwen · Kimi K2 · LLM in consensus ·{' '}
               <span className="text-[#5A5A7A]">we never store your source code</span>
             </p>
           </motion.div>

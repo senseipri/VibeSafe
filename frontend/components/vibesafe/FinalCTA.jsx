@@ -74,9 +74,7 @@ export default function FinalCTA() {
             Scan Your Repo Free
             <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
           </a>
-          <button className="inline-flex items-center justify-center gap-2 px-7 py-4 border border-[#2D2D55] hover:border-[#3B9EFF] bg-[#0B0B1A]/60 text-[#FFFFFF] font-medium rounded-md transition-all">
-            Book a Demo
-          </button>
+
         </motion.div>
 
         <motion.p
@@ -86,8 +84,7 @@ export default function FinalCTA() {
           transition={{ duration: 0.6, delay: 0.5 }}
           className="mt-12 font-mono text-[12px] text-[#A0A0A0] tracking-wider"
         >
-          47,000+ repos scanned · 312,000+ vulnerabilities found · $4.2M+ in potential breaches
-          prevented
+          500+ repos scanned · 3000+ vulnerabilities found 
         </motion.p>
       </div>
     </section>

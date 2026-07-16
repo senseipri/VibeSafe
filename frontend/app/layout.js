@@ -1,4 +1,5 @@
 import AntiGravityBackground from '@/components/vibesafe/AntiGravityBackground';
+import ScrollToTop from '@/components/vibesafe/ScrollToTop';
 import './globals.css';
 
 export const metadata = {
@@ -25,6 +26,7 @@ export default function RootLayout({ children }) {
         </a>
         <AntiGravityBackground />
         <div className="relative z-10">{children}</div>
+        <ScrollToTop />
       </body>
     </html>
   );

@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Menu, X, ShieldCheck, Github, FileCode, Lock, BookOpen, Zap } from 'lucide-react';
 
 const SIDE_LABELS = ['VIBESAFE', 'HOW IT WORKS', 'LIVE DEMO', 'CATALOG', 'PRICING'];
-const SIDE_HREFS = ['#top', '#how', '#features', '#docs', '#pricing'];
+const SIDE_HREFS = ['/#top', '/#how', '/#features', '/#docs', '/#pricing'];
 
 export default function Nav() {
   const [scrolled, setScrolled] = useState(false);
@@ -28,17 +28,17 @@ export default function Nav() {
       >
         <div className="max-w-7xl mx-auto px-6 lg:px-10 h-16 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-3 group">
-            <div className="relative w-10 h-10 rounded-md border border-[#8A2BE2]/50 bg-[#05050D] flex items-center justify-center shadow-[0_0_20px_rgba(138,43,226,0.4)]">
-              <span className="font-display text-[15px] tracking-wider text-[#B967FF]">VS</span>
+            <div className="relative w-10 h-10 rounded-md border border-[#8A2BE2]/50 bg-[#05050D] flex items-center justify-center shadow-[0_0_20px_rgba(138,43,226,0.4)] overflow-hidden">
+              <img src="/vibesafe-icon.svg" alt="VibeSafe Logo" className="w-6 h-6 object-contain" />
               <div className="absolute inset-0 rounded-md bg-[#8A2BE2]/20 blur-md -z-10" />
             </div>
           </Link>
 
           <div className="hidden md:flex items-center gap-7">
-            <NavLink href="#how" icon={Zap} label="How It Works" />
-            <NavLink href="#features" icon={FileCode} label="Live Demo" />
-            <NavLink href="#docs" icon={BookOpen} label="Catalog" />
-            <NavLink href="#pricing" icon={Lock} label="Pricing" />
+            <NavLink href="/#how" icon={Zap} label="How It Works" />
+            <NavLink href="/#features" icon={FileCode} label="Live Demo" />
+            <NavLink href="/#docs" icon={BookOpen} label="Catalog" />
+            <NavLink href="/#pricing" icon={Lock} label="Pricing" />
             <Link
               href="/scan"
               className="hover-aura cta-glow inline-flex items-center gap-2 px-5 py-2.5 rounded-md border border-[#8A2BE2] hover:border-[#B967FF] text-[#B967FF] hover:text-white text-[11px] font-mono tracking-[0.25em] uppercase transition-all"
