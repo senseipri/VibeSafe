@@ -115,7 +115,7 @@ export default function Hero() {
             <ArrowRight className="w-4 h-4 text-[#B967FF] group-hover:text-[#FF00FF] group-hover:translate-x-1 transition-all" />
           </Link>
           <span className="font-mono text-[10px] tracking-[0.3em] text-[#5A5A7A] uppercase">
-            — 45s avg · 3 LLM consensus · 10,000+ scans
+            — 45s avg · 3 LLM consensus · 500+ scans
           </span>
         </motion.div>
       </div>
