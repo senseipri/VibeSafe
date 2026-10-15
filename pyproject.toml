@@ -23,7 +23,7 @@ groq = "^0.28.0"
 openai = "^1.57.0"
 google-generativeai = "^0.8.3"
 weasyprint = "^62.3"
-python-multipart = "^0.0.17"
+python-multipart = "^0.0.31"
 aiofiles = "^24.1.0"
 psycopg2-binary = "^2.9.12"
  
